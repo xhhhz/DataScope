@@ -9,6 +9,11 @@ Gradio 前端（路径一适配版）。
   5. 修复了旧版 df_summary 断链 Bug
 """
 import os
+
+# 必须在任何 HTTP 客户端库初始化之前设置，确保 Gradio 健康检查绕过系统代理
+os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1,0.0.0.0")
+os.environ.setdefault("no_proxy", "localhost,127.0.0.1,0.0.0.0")
+
 import re
 import uuid
 from typing import Optional
@@ -293,7 +298,7 @@ def _new_session():
     )
 
 
-with gr.Blocks(title="智能数据分析师", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="智能数据分析师") as demo:
 
     # ── Session 级状态 ──────────────────────────────────────
     thread_id_state  = gr.State(lambda: str(uuid.uuid4()))
@@ -407,4 +412,5 @@ if __name__ == "__main__":
         share=False,
         server_name="0.0.0.0",
         server_port=7860,
+        theme=gr.themes.Soft(),
     )

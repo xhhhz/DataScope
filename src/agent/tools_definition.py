@@ -36,7 +36,11 @@ def inspect_dataframe(file_path: str) -> str:
         for col in df.columns:
             dtype  = str(df[col].dtype)
             nulls  = int(df[col].isna().sum())
-            unique = int(df[col].nunique())
+            # 修复：列值含嵌套 dict/list（不可哈希）时，转为字符串再计算唯一数
+            try:
+                unique = int(df[col].nunique())
+            except TypeError:
+                unique = int(df[col].astype(str).nunique())
 
             if pd.api.types.is_numeric_dtype(df[col]):
                 col_info[col] = {
@@ -49,11 +53,21 @@ def inspect_dataframe(file_path: str) -> str:
                     "std":    round(float(df[col].std()), 4),
                 }
             else:
+                # 修复：列值含嵌套 dict/list 时，转为字符串再取样本
+                try:
+                    samples = df[col].dropna().unique()[:5].tolist()
+                except TypeError:
+                    samples = df[col].astype(str).dropna().unique()[:5].tolist()
+                # 修复：样本值超长时截断，防止嵌套结构序列化后撑爆上下文
+                samples = [
+                    str(s)[:100] + "..." if len(str(s)) > 100 else s
+                    for s in samples
+                ]
                 col_info[col] = {
                     "type":    dtype,
                     "nulls":   nulls,
                     "unique":  unique,
-                    "samples": df[col].dropna().unique()[:5].tolist(),
+                    "samples": samples,
                 }
 
         result = {
@@ -61,7 +75,11 @@ def inspect_dataframe(file_path: str) -> str:
             "columns": col_info,
             "preview": df.head(3).to_dict(orient="records"),
         }
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        # 修复：最终输出超长时整体截断，防止超出模型上下文窗口
+        output = json.dumps(result, ensure_ascii=False, indent=2)
+        if len(output) > 8000:
+            output = output[:8000] + "\n... (内容过长已截断，请通过 python_repl 工具进一步探索数据)"
+        return output
 
     except Exception as e:
         return f"错误：{e}"

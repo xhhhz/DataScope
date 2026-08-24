@@ -224,8 +224,14 @@ def _describe_column(series: pd.Series, col_name: str) -> str:
 
     else:
         # object / category / bool 等
-        n_unique = int(series.nunique())
-        samples  = series.dropna().unique()[:CATEGORY_SAMPLE_COUNT].tolist()
+        try:
+            n_unique = int(series.nunique())
+            samples  = series.dropna().unique()[:CATEGORY_SAMPLE_COUNT].tolist()
+        except TypeError:
+            # 修复：列值含嵌套 dict/list（不可哈希），转为字符串后再统计
+            str_series = series.astype(str)
+            n_unique   = int(str_series.nunique())
+            samples    = str_series.dropna().unique()[:CATEGORY_SAMPLE_COUNT].tolist()
         sample_str = " / ".join(str(s) for s in samples)
         more = f"...等共 {n_unique} 种" if n_unique > CATEGORY_SAMPLE_COUNT else f"（共 {n_unique} 种）"
         return (

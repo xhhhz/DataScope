@@ -10,8 +10,8 @@ load_dotenv()  # 读取 .env 文件
 
 class Config:
     OPENAI_API_KEY: str    = os.environ["OPENAI_API_KEY"]
-    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL")
-    OPENAI_MODEL: str      = os.getenv("OPENAI_MODEL")
+    OPENAI_BASE_URL: str   = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    OPENAI_MODEL: str      = os.getenv("OPENAI_MODEL", "qwen-max")
     CHART_OUTPUT_PATH: str = os.getenv("CHART_OUTPUT_PATH")
     # 修复问题6：删除从未使用的 MAX_RETRY_COUNT，避免误导
     CODE_EXEC_TIMEOUT: int = int(os.getenv("CODE_EXEC_TIMEOUT", "30"))
