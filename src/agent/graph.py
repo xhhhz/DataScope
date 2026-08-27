@@ -78,9 +78,14 @@ def analyst_node(state: AgentState) -> dict:
     inner_config = {"configurable": {"thread_id": f"inner_{uuid.uuid4().hex}"}}
     result = agent.invoke({"messages": state["messages"]}, inner_config)
 
+    # 返回本轮新产生的全部消息（工具调用 AIMessage + 工具结果 ToolMessage + 最终回答）。
+    # 原先只返回 result["messages"][-1]，导致界面完全拿不到工具调用过程，
+    # app.py 里解析 tool_calls / ToolMessage 的分支从来不会被触发。
+    new_messages = result["messages"][len(state["messages"]):]
+
     last_message = result["messages"][-1]
     return {
-        "messages":     [last_message],
+        "messages":     new_messages or [last_message],
         "final_answer": last_message.content,
     }
 
