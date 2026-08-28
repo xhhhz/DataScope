@@ -37,8 +37,8 @@ python -m venv .venv && source .venv/bin/activate && pip install -r requirements
 
 ```bash
 OPENAI_API_KEY=your-key-here
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=your-url-here
+OPENAI_MODEL=your-model
 CHART_OUTPUT_PATH=tmp/chart.png
 CODE_EXEC_TIMEOUT=30
 ```
@@ -63,8 +63,8 @@ python -m src.app
 | 变量 | 必填 | 默认值 | 说明 |
 |---|---|---|---|
 | `OPENAI_API_KEY` | ✅ | — | 模型 API 密钥 |
-| `OPENAI_BASE_URL` | | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 任何 **OpenAI 兼容**端点都可以 |
-| `OPENAI_MODEL` | | `qwen-max` | 模型名 |
+| `OPENAI_BASE_URL` | ✅ | — | 任何 **OpenAI 兼容**端点都可以 |
+| `OPENAI_MODEL` | ✅ | — | 模型名 |
 | `CHART_OUTPUT_PATH` | | — | 图表默认输出路径 |
 | `CODE_EXEC_TIMEOUT` | | `30` | 沙箱单次执行超时（秒） |
 | `LANGCHAIN_TRACING_V2` | | — | 设为 `true` 开启 LangSmith 追踪 |
