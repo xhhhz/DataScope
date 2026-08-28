@@ -11,6 +11,8 @@ Agent 可调用的全部工具。
 """
 import json
 import re
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 from langchain_core.tools import tool
@@ -330,6 +332,43 @@ def _looks_like_datetime(samples: list) -> bool:
     return matches >= len(samples) * 0.6
 
 
+# 用户在提问里直接点名的图表类型。放在规则引擎最前面，优先级最高 ——
+# 用户都明说"画个饼图"了，再由规则去猜是本末倒置。
+_EXPLICIT_CHART = [
+    ("pie",       ["饼图", "饼状图", "pie"]),
+    ("scatter",   ["散点图", "scatter"]),
+    ("histogram", ["直方图", "histogram"]),
+    ("heatmap",   ["热力图", "热图", "heatmap"]),
+    ("box",       ["箱线图", "盒须图", "boxplot", "box plot"]),
+    ("bar",       ["柱状图", "条形图", "柱形图", "bar chart"]),
+    ("line",      ["折线图", "曲线图", "线图", "line chart"]),
+]
+
+# 用户在问趋势/随时间变化，才有理由画折线图
+_TREND_KEYWORDS = ["趋势", "变化", "走势", "增长", "逐月", "逐年", "随时间", "trend"]
+
+
+def _explicit_chart_type(user_question: str) -> Optional[str]:
+    """用户是否在提问里直接点名了图表类型。"""
+    q = (user_question or "").lower()
+    for ctype, keywords in _EXPLICIT_CHART:
+        if any(kw.lower() in q for kw in keywords):
+            return ctype
+    return None
+
+
+def _cols_in_result(cols: list, analysis_result: str) -> list:
+    """
+    分析结果文本里真正出现过的列名。
+
+    图表要画的是 python_repl 聚合之后的结果（例如「地区 × 销售额」），
+    而不是原始文件的全部列。原先直接拿原始 df 的特征做决策，只要文件里
+    有日期列就永远推荐折线图，规则 2~5 变成死代码。
+    """
+    text = analysis_result or ""
+    return [c for c in cols if c and str(c) in text]
+
+
 def _decide_chart_type(
     features:        dict,
     analysis_result: str,
@@ -346,16 +385,46 @@ def _decide_chart_type(
     time_cols      = features["time_like_cols"] + features["datetime_cols"]
     category_info  = features["category_info"]
 
+    # 日期列本身是字符串，会混进 object_cols；若不排除，
+    # 规则5 会把「日期」当成类别列去画柱状图
+    cat_cols = [c for c in object_cols if c not in time_cols]
+
+    # 优先使用分析结果里真正出现过的列
+    num_col = (_cols_in_result(numeric_cols, analysis_result) or numeric_cols or [None])[0]
+    cat_col = (_cols_in_result(cat_cols, analysis_result) or cat_cols or [None])[0]
+
     rule_result = None
 
-    # 规则1：时间序列 → 折线图
-    if has_time and len(numeric_cols) >= 1:
+    # 规则0：用户直接点名了图表类型 → 直接采纳，不再猜
+    explicit = _explicit_chart_type(user_question)
+    if explicit:
+        rule_result = {
+            "recommended_chart": explicit,
+            "x_col":  cat_col or (time_cols[0] if time_cols else None),
+            "y_col":  num_col,
+            "reason": f"用户在提问中明确要求 {explicit} 图",
+        }
+        if explicit == "pie":
+            rule_result["names_col"]  = cat_col
+            rule_result["values_col"] = num_col
+
+    # 规则1：时间序列 → 折线图。
+    # 必须同时满足「原始数据有时间列」和「本次分析确实涉及时间」——
+    # 否则按地区聚合的结果也会被推荐成按日期的折线图。
+    elif (
+        has_time
+        and len(numeric_cols) >= 1
+        and (
+            any(k in (user_question or "") for k in _TREND_KEYWORDS)
+            or _cols_in_result(time_cols, analysis_result)
+        )
+    ):
         rule_result = {
             "recommended_chart": "line",
             "x_col":  time_cols[0] if time_cols else None,
-            "y_col":  numeric_cols[0],
+            "y_col":  num_col,
             "reason": (
-                f"数据包含时间列 `{time_cols[0] if time_cols else ''}`，"
+                f"分析涉及时间列 `{time_cols[0] if time_cols else ''}`，"
                 "折线图最能体现趋势变化"
             ),
         }
@@ -389,8 +458,7 @@ def _decide_chart_type(
         }
 
     # 规则5：类别列 + 数值列 → 饼图 / 柱状图
-    elif len(object_cols) >= 1 and len(numeric_cols) >= 1:
-        cat_col  = object_cols[0]
+    elif len(cat_cols) >= 1 and len(numeric_cols) >= 1:
         n_unique = category_info.get(cat_col, {}).get("n_unique", 0)
         is_proportion = any(
             kw in user_question
@@ -401,14 +469,14 @@ def _decide_chart_type(
             rule_result = {
                 "recommended_chart": "pie",
                 "names_col":  cat_col,
-                "values_col": numeric_cols[0],
+                "values_col": num_col,
                 "reason":     f"用户询问占比，{n_unique} 种类别（<=7），饼图清晰展示构成",
             }
         elif n_unique > 10:
             rule_result = {
                 "recommended_chart": "bar",
                 "x_col":       cat_col,
-                "y_col":       numeric_cols[0],
+                "y_col":       num_col,
                 "orientation": "h",
                 "reason":      f"类别数量 {n_unique} 种（>10），横向柱状图避免标签拥挤",
             }
@@ -416,10 +484,10 @@ def _decide_chart_type(
             rule_result = {
                 "recommended_chart": "bar",
                 "x_col":  cat_col,
-                "y_col":  numeric_cols[0],
+                "y_col":  num_col,
                 "reason": (
                     f"类别列 `{cat_col}`（{n_unique} 种）"
-                    f"对比数值 `{numeric_cols[0]}`，柱状图直观展示差异"
+                    f"对比数值 `{num_col}`，柱状图直观展示差异"
                 ),
             }
 
